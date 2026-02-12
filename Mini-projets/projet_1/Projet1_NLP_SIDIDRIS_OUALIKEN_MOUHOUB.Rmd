@@ -1,0 +1,149 @@
+---
+title: "<FONT color='#0066CC'><FONT size = 4 ><DIV align= center> ESIEE-Paris: 2025 - 2026 </DIV></FONT></FONT>"
+subtitle: "Projet 1 : Classification Bayésienne d'Émotions"
+author: "Ryane SID IDRIS - Yacine OUALIKEN - Sofiane MOUHOUB"
+date: "22/01/2026"
+output:
+  html_document:
+    highlight: textmate
+    theme: readable
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+# 1. Introduction
+Ce projet vise à classer des textes selon l'émotion qu'ils expriment (Joie, Peur, etc.) en utilisant une approche **Bayésienne Naïve**. Nous utilisons le dataset "Emotion Dataset" de Kaggle. 
+
+# 2. Chargement et Exploration des Données
+
+D'abord, nous commençons par charger les librairies nécessaires.
+```{r libs}
+# Chargement des paquets
+library(tidyverse)
+library(tm)          
+library(SnowballC)   
+library(e1071)       
+library(caret)       
+library(kableExtra)
+```
+## 2.1 Importation du Dataset
+
+Nous chargeons le fichier csv.
+
+```{r load_data}
+nom_fichier <- "Emotion_classify_Data.csv"
+
+if(file.exists(nom_fichier)) {
+  # Chargement du CSV
+  df <- read.csv(nom_fichier, stringsAsFactors = FALSE)
+
+  if(ncol(df) >= 2) {
+    colnames(df)[1:2] <- c("text", "emotion")
+  }
+
+  # Affichage des premières lignes
+  df %>%
+    head() %>%
+    kbl(caption = "Aperçu des premières lignes") %>%
+    kable_styling(bootstrap_options = "striped", full_width = F)
+    
+} else {
+  stop("erreur")
+}
+```
+## 2.2 Analyse Exploratoire
+
+Visualisation de la répartition des émotions pour vérifier si nos classes sont équilibrées.
+
+```{r eda_plot}
+ggplot(df, aes(x = emotion, fill = emotion)) +
+  geom_bar() +
+  theme_minimal() +
+  labs(title = "Distribution des émotions", y = "Nombre de textes", x = "") +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1))
+```
+**Analyse du graphique :**
+Nous observons que le jeu de données est parfaitement équilibré. Les trois classes (colère, peur, joie) contiennent chacune environ 2000 textes. C'est un point positif, car cela évitera que notre modèle ne favorise une émotion par rapport aux autres lors de l'apprentissage.
+
+# 3. Prétraitement des Données (NLP)
+Nous nettoyons maintenant les textes (suppression de la ponctuation, des mots vides...) et les transformons en matrice numérique via TF-IDF.
+```{r}
+# 1. Création du Corpus
+corpus <- VCorpus(VectorSource(df$text))
+
+# 2. Nettoyage
+clean_corpus <- function(c) {
+  c <- tm_map(c, content_transformer(tolower))
+  c <- tm_map(c, removePunctuation)
+  c <- tm_map(c, removeNumbers)
+  c <- tm_map(c, removeWords, stopwords("en"))
+  c <- tm_map(c, stripWhitespace)
+  c <- tm_map(c, stemDocument)
+  return(c)
+}
+corpus_clean <- clean_corpus(corpus)
+
+# 3. TF-IDF et Réduction
+dtm <- DocumentTermMatrix(corpus_clean, control = list(weighting = weightTfIdf))
+# On ne garde que les mots fréquents (99.5%) pour que ça tourne vite
+dtm_sparse <- removeSparseTerms(dtm, 0.995)
+
+# 4. Dataframe final
+dataset_final <- as.data.frame(as.matrix(dtm_sparse))
+dataset_final$target <- as.factor(df$emotion)
+
+cat("Dimensions finales :", dim(dataset_final))
+```
+
+**Bilan du nettoyage :**
+Le résultat `5937 366` nous indique la taille de notre matrice finale.
+Nous avons conservé 366 mots-clés (colonnes) pour décrire nos 5937 textes (lignes). Cette réduction  permet de garder uniquement l'information utile et d'éliminer le bruit, ce qui rendra l'entraînement du modèle beaucoup plus rapide.
+
+# 4. Modélisation et Résultats
+
+Nous divisons les données (80% apprentissage / 20% test) et lançons l'algorithme **Naive Bayes**.
+
+```{r modeling}
+set.seed(123)
+
+# 1. Division Train / Test
+index <- createDataPartition(dataset_final$target, p = 0.8, list = FALSE)
+train <- dataset_final[index, ]
+test  <- dataset_final[-index, ]
+
+# 2. Entraînement
+model <- naiveBayes(target ~ ., data = train, laplace = 1)
+
+# 3. Prédiction sur les 20% restants
+pred <- predict(model, test)
+
+# 4. Matrice de confusion et Scores
+cm <- confusionMatrix(pred, test$target, mode = "prec_recall")
+
+# Affichage des scores
+kbl(cm$byClass[, c("Precision", "Recall", "F1")], caption = "Performance du modèle") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F)
+```
+**Interprétation des résultats :**
+Le tableau ci-dessus nous montre la qualité du modèle pour chaque émotion :
+* **Precision :** Est-ce que le modèle a raison quand il prédit une émotion ?
+* **Recall :** Est-ce qu'il n'en oublie pas ?
+* **F1 :** La note globale (la moyenne des deux).
+
+On observe des scores solides, ce qui prouve que le vocabulaire de la *Colère*, de la *Peur* et de la *Joie* est assez distinct pour être détecté par une IA simple.
+
+# 5. Conclusion
+Ce projet est un succès. Nous avons réussi à :
+1.  Nettoyer des données textuelles brutes (NLP).
+2.  Les transformer en mathématiques (TF-IDF).
+3.  Entraîner une Intelligence Artificielle (Naive Bayes) capable de lire des émotions.
+
+Le modèle est rapide et efficace, validant ainsi l'approche Bayésienne pour l'analyse de sentiments. 
+
+**Note personnelle (Ryane SID IDRIS) :**
+Ce projet a une résonance particulière pour moi. Lors d'un précédent projet de recherche sur un Système de Trading Automatisé, j'avais implémenté des modèles d'analyse de sentiments basés sur **FinBERT** pour prédire les cours de bourse.
+Il est très intéressant de comparer ces deux approches : le Naive Bayes utilisé ici est beaucoup plus rapide et léger, tandis que les modèles type BERT (utilisés pour le trading) capturent mieux le contexte mais demandent plus de puissance de calcul. Ce projet complète donc ma vision des outils NLP disponibles pour l'analyse de données.
