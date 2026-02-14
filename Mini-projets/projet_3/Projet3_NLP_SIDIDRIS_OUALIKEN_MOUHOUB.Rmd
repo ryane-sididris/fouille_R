@@ -233,4 +233,3 @@ En conclusion, ce projet démontre qu'une chaîne de traitement NLP rigoureuse c
 
 **Note personnelle (Yacine OUALIKEN) :** Ce projet m'a permis de consolider mes compétences en gestion de gros volumes de données sous R et en traitement du signal textuel. J'ai eu par ailleur énormèment de problème à coder et je me suis aidé de Gemini et ChatGPT pour m'aider à avancer. Je pense avoir encore des erreurs mais les corrigé entièrement reviendrai à utiliser uniquement l'IA sans comprendre ce que je fais et ce n'est pas le but. J'ai tout de même l'impression d'avoir compris une bonne partie des notions lié à ce mini projet et espère de tout coeur qu'elles me serviront pour mon futur
 
-
