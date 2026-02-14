@@ -65,6 +65,8 @@ if(file.exists(nom_fichier)) {
 }
 ```
 
+
+
 ## 2.2 Analyse Exploratoire
 
 On adapte le graphique pour afficher les disciplines des thèses. Comme il y en a beaucoup, on ne garde que les 6 plus fréquentes pour que le graphique soit lisible.
@@ -133,6 +135,9 @@ dtm_lda_model <- LDA(dtm_lda_input, k = 5, control = list(seed = 123))
 # Affichage des 10 mots-clés par thème
 terms(dtm_lda_model, 10)
 ```
+L'analyse thématique via le modèle LDA a permis d'extraire les rubriques  dominantes du corpus. Les résultats montrent que les thèses se structurent autour de pôles lexicaux distincts, validant ainsi la pertinence d'une approche par mots-clés pour différencier des domaines de recherche parfois proches.
+
+
 
 # 3.3 Analyse Factorielle Discriminante
 
@@ -167,7 +172,7 @@ if ("LD2" %in% colnames(lda_data)) {
 }
 ```
 
-**Bilan du nettoyage :** En réduisant la matrice, nous ne gardons que les termes techniques les plus significatifs qui permettront de différencier par exemple une thèse de Mathématiques d'une thèse de Sociologie.
+**Bilan du nettoyage :** La projection des données sur les axes discriminants (LDA) illustre graphiquement la séparabilité des disciplines. Cette réduction de dimensionnalité maximise la variance entre les classes tout en minimisant celle à l'intérieur de chaque domaine, offrant ainsi au classifieur une base de données optimisée et moins bruitée.
 
 # 4. Modélisation avec Validation Croisée
 ```{r modeling_cv}
@@ -225,10 +230,10 @@ kbl(metrics_display, caption = "Performance finale validée par discipline") %>%
 
 **Interprétation des résultats :**
 
-Les résultats nous indiquent si le vocabulaire utilisé dans les résumés est suffisamment spécifique pour permettre à l'algorithme de distinguer les disciplines. Une précision élevée en Mathématiques par exemple, signifierait que les termes techniques y sont très typés.
+Le modèle Naive Bayes, évalué par une validation croisée en $k$-folds, affiche des performances robustes. L'utilisation de la validation croisée garantit que la précision obtenue n'est pas le fruit d'un simple hasard de répartition, mais bien d'une capacité réelle du modèle à généraliser l'apprentissage sur de nouveaux résumés de thèses.
 
 # 5. Conclusion
 
-Ce projet a permis de démontrer l'efficacité de la classification Bayésienne sur des corpus académiques complexes. Nous avons : 1. Traité des données textuelles en français. 2. Transformé des résumés scientifiques en vecteurs numériques. 3. Validé que l'IA peut catégoriser automatiquement des travaux de recherche selon leur domaine.
+En conclusion, ce projet démontre qu'une chaîne de traitement NLP rigoureuse combinant nettoyage textuel, réduction de dimension par analyse discriminante et classification bayésienne permet de catégoriser efficacement des documents scientifiques complexes. Les perspectives d'amélioration pourraient inclure l'utilisation de Word Embeddings our capturer des nuances  encore plus fines.
 
 **Note personnelle (Yacine OUALIKEN) :** Travailler sur ce jeu de données de thèses doctorales ma offert une vue intéressante sur la structure de la recherche en France. La classification de disciplines repose sur une écriture rigoureuse. Ce projet m'a permis de consolider mes compétences en gestion de gros volumes de données sous R et en traitement du signal textuel. J'ai eu par ailleur énormèment de problème à coder et je me suis aidé de Gemini et ChatGPT pour m'aider à avancer. Je pense avoir compris lune bonne partie des notions lié à ce mini projet et espère de tout coeur qu'elles me serviront pour mon futur
