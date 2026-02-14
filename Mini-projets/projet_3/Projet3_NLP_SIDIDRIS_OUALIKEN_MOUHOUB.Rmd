@@ -48,11 +48,7 @@ if(file.exists(nom_fichier)) {
   df <- fread(nom_fichier, nrows = 10000)
   
   # Identification automatique des colonnes pour éviter les erreurs de position
-  # On cherche les colonnes qui ressemblent à "resume" et "discipline/domain"
-  # Si l'index numérique change, cette méthode est plus sûre :
   
-  # On force le renommage selon ce qu'on voit sur tes screens :
-  # Le résumé est souvent en col 3 et la discipline en col 8 ou 9
   setnames(df, old = c(colnames(df)[3], colnames(df)[8]), new = c("resume", "discipline"))
   
   df <- df[, .(resume, discipline)]
@@ -100,9 +96,9 @@ corpus_clean <- corpus %>%
   tm_map(content_transformer(tolower)) %>%
   tm_map(removePunctuation) %>%
   tm_map(removeNumbers) %>%
-  tm_map(removeWords, stopwords("french")) %>% # Changement en français
+  tm_map(removeWords, stopwords("french")) %>%
   tm_map(stripWhitespace) %>%
-  tm_map(stemDocument, language = "french")    # Racinisation française
+  tm_map(stemDocument, language = "french")
   tm_map(corpus, removeWords, c(stopwords("french"), "moham", "thèse", "résumé"))
 
 # 4. Création des matrices
@@ -207,16 +203,15 @@ cm_final <- confusionMatrix(final_pred, lda_final_clean$target, mode = "prec_rec
 # On vérifie si byClass est une matrice ou un vecteur
 metrics_table <- as.data.frame(cm_final$byClass)
 
-# Si c'est un vecteur (une seule classe), on le transforme en ligne
+# Si c'est un vecteur on le transforme en ligne
 if (is.null(nrow(metrics_table))) {
     metrics_table <- as.data.frame(t(cm_final$byClass))
 }
 
 # On sélectionne les colonnes en étant flexible sur les noms
-# (Gère "Precision" ou "Pos Pred Value")
 cols_to_keep <- intersect(colnames(metrics_table), c("Precision", "Recall", "F1"))
 
-# Si les noms standards manquent, on essaie les noms alternatifs de caret
+# Si les noms standards manquent on essaie les noms alternatifs de caret
 if(length(cols_to_keep) < 3){
     cols_to_keep <- intersect(colnames(metrics_table), c("Pos Pred Value", "Sensitivity", "F1"))
 }
@@ -230,11 +225,12 @@ kbl(metrics_display, caption = "Performance finale validée par discipline") %>%
 
 **Interprétation des résultats :**
 
-Le modèle Naive Bayes, évalué par une validation croisée en $k$-folds, affiche des performances robustes. L'utilisation de la validation croisée garantit que la précision obtenue n'est pas le fruit d'un simple hasard de répartition, mais bien d'une capacité réelle du modèle à généraliser l'apprentissage sur de nouveaux résumés de thèses.
+L'utilisation de la validation croisée garantit que la précision obtenue n'est pas le fruit d'un simple hasard de répartition mais bien d'une capacité réelle du modèle à généraliser l'apprentissage sur de nouveaux résumés de thèses.
 
 # 5. Conclusion
 
-En conclusion, ce projet démontre qu'une chaîne de traitement NLP rigoureuse combinant nettoyage textuel, réduction de dimension par analyse discriminante et classification bayésienne permet de catégoriser efficacement des documents scientifiques complexes. Les perspectives d'amélioration pourraient inclure l'utilisation de Word Embeddings our capturer des nuances  encore plus fines.
+En conclusion, ce projet démontre qu'une chaîne de traitement NLP rigoureuse combinant nettoyage textuel, réduction de dimension par analyse discriminante et classification bayésienne permet de catégoriser efficacement des documents scientifiques complexes.
 
-**Note personnelle (Yacine OUALIKEN) :** Ce projet m'a permis de consolider mes compétences en gestion de gros volumes de données sous R et en traitement du signal textuel. J'ai eu par ailleur énormèment de problème à coder et je me suis aidé de Gemini et ChatGPT pour m'aider à avancer. Je pense avoir encore des erreurs mais les corrigé entièrement viendrai à utiliser uniquement l'IA sans comprendre ce que je fais et ce n'est pas le but. J'ai tout de même l'impression d'avoir compris une bonne partie des notions lié à ce mini projet et espère de tout coeur qu'elles me serviront pour mon futur
+**Note personnelle (Yacine OUALIKEN) :** Ce projet m'a permis de consolider mes compétences en gestion de gros volumes de données sous R et en traitement du signal textuel. J'ai eu par ailleur énormèment de problème à coder et je me suis aidé de Gemini et ChatGPT pour m'aider à avancer. Je pense avoir encore des erreurs mais les corrigé entièrement reviendrai à utiliser uniquement l'IA sans comprendre ce que je fais et ce n'est pas le but. J'ai tout de même l'impression d'avoir compris une bonne partie des notions lié à ce mini projet et espère de tout coeur qu'elles me serviront pour mon futur
+
 
