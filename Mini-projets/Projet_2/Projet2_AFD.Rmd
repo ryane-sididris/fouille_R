@@ -1,0 +1,121 @@
+---
+title: "<FONT color='#0066CC'><FONT size = 4 ><DIV align= center> ESIEE-Paris: 2025 - 2026 </DIV></FONT></FONT>"
+subtitle: "Projet 2 : Analyse Factorielle Discriminante (AFD) sur Tweets"
+author: "Ryane SID IDRIS - Badr TAJINI"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    highlight: textmate
+    theme: readable
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+# 1. Introduction
+L'objectif de ce projet est d'analyser les sentiments (Positif, Négatif, Neutre, Irrelevant) extraits de tweets concernant diverses entités (marques, jeux vidéo, etc.) .
+
+Pour ce faire, nous utilisons une méthode de réduction de dimension et de classification supervisée : l'Analyse Factorielle Discriminante (AFD). Cette méthode permet de projeter les données dans un espace réduit tout en maximisant la séparation entre les classes de sentiments.
+
+
+# 2. Méthodologie et Pré-traitement
+Nous commençons par charger les librairies nécessaires à la manipulation des données, au traitement du texte (NLP) et à la modélisation statistique.
+```{r}
+library(tidyverse)
+library(tm)           
+library(SnowballC)    
+library(MASS)         
+library(caret)        
+library(kableExtra)   
+```
+# 2.1 Chargement des données
+Nous utilisons le jeu de données Twitter Entity Sentiment Analysis. Nous chargeons un échantillon pour optimiser le temps de calcul.
+```{r}
+df <- read.csv("twitter_training.csv", header = FALSE, stringsAsFactors = FALSE, nrows = 5000)
+colnames(df) <- c("TweetID", "Entity", "Sentiment", "TweetContent")
+
+df <- df %>%
+  dplyr::select(Sentiment, TweetContent) %>%
+  filter(TweetContent != "") %>%
+  drop_na()
+
+df$Sentiment <- as.factor(df$Sentiment)
+
+corpus <- VCorpus(VectorSource(df$TweetContent))
+
+clean_text <- function(c) {
+  c <- tm_map(c, content_transformer(tolower))
+  c <- tm_map(c, removePunctuation)
+  c <- tm_map(c, removeNumbers)
+  c <- tm_map(c, removeWords, stopwords("en"))
+  c <- tm_map(c, stripWhitespace)
+  return(c)
+}
+
+corpus_clean <- clean_text(corpus)
+
+dtm <- DocumentTermMatrix(corpus_clean, control = list(weighting = weightTfIdf))
+dtm_sparse <- removeSparseTerms(dtm, 0.99)
+
+data_model <- as.data.frame(as.matrix(dtm_sparse))
+data_model <- data_model[, sapply(data_model, function(v) var(v, na.rm=TRUE) != 0)]
+
+data_model$Sentiment <- df$Sentiment
+
+numeric_cols <- sapply(data_model, is.numeric)
+data_model <- data_model[rowSums(data_model[, numeric_cols]) > 0, ]
+
+cat("Dimensions finales de la matrice :", dim(data_model))
+```
+# 3. Implémentation de l'AFD
+Nous divisons les données et appliquons l'AFD.
+```{r}
+set.seed(42)
+
+index <- createDataPartition(data_model$Sentiment, p = 0.8, list = FALSE)
+train <- data_model[index, ]
+test  <- data_model[-index, ]
+
+lda_model <- lda(Sentiment ~ ., data = train)
+
+prop_lda <- lda_model$svd^2 / sum(lda_model$svd^2)
+print(round(prop_lda, 3))
+```
+# 4. Résultats et Visualisation
+Nous projetons les tweets sur les deux premiers axes discriminants (LD1 et LD2) pour visualiser la séparation des classes.
+```{r}
+lda_pred <- predict(lda_model, test)
+dataset_viz <- data.frame(Sentiment = test$Sentiment, lda_pred$x)
+
+ggplot(dataset_viz, aes(x = LD1, y = LD2, color = Sentiment)) +
+  geom_point(alpha = 0.6, size = 2) +
+  theme_minimal() +
+  labs(title = "Projection des Tweets sur les axes AFD (LD1 vs LD2)",
+       x = "LD1", y = "LD2") +
+  scale_color_brewer(palette = "Set1")
+```
+L'axe horizontal sépare bien les tweets Négatifs (Bleus) des Positifs (Violets). Par contre, les tweets Neutres et Irrelevant se mélangent au centre, ce qui explique pourquoi la précision du modèle plafonne à 55%.
+
+# 4.1 Évaluation de la classification
+Nous évaluons la précision du modèle pour prédire le sentiment.
+```{r}
+cm <- confusionMatrix(lda_pred$class, test$Sentiment)
+
+cm$table %>%
+  kbl(caption = "Matrice de Confusion") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F)
+
+cat("Précision (Accuracy) :", round(cm$overall['Accuracy'] * 100, 2), "%")
+```
+Avec une précision de 54,85 %, le modèle surpasse le hasard (25%). Le premier axe (LD1) capture 44,5 % de la variance, ce qui permet de bien séparer les sentiments Négatifs et Positifs sur le graphique. Ce plan factoriel est fiable car il conserve 77 % de l'information totale. Enfin, la matrice de confusion montre que le modèle est très efficace pour identifier les avis Positifs avec 264 bonnes prédictions.
+
+# 5. Conclusion
+
+Ce projet a permis d'appliquer l'Analyse Factorielle Discriminante (AFD) sur un jeu de données de tweets.
+
+1.  **Méthodologie :** Nous avons d'abord nettoyé les tweets (en retirant la ponctuation et les mots inutiles) puis on les a transformés en chiffres pour que l'ordinateur puisse les analyser.
+2.  **Résultats :** Grâce à l'AFD, on a pu résumer toutes les données sur un simple graphique. Même si la précision de 54.85% montre que c'est difficile d'analyser du texte parfaitement, le graphique sépare très bien les avis positifs des avis négatifs.
+3.  **Perspectives :** La méthode a un peu de mal à distinguer les tweets "Neutres". Pour améliorer le score, on pourrait utiliser des techniques d'IA plus modernes (comme le Deep Learning) qui comprennent mieux le sens des phrases.
