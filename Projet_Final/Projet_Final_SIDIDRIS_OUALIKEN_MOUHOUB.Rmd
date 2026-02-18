@@ -1,0 +1,334 @@
+---
+title: "Projet Classification IA vs Humain"
+author: "Ryane SID IDRIS - Yacine OUALIKEN - Sofiane MOUHOUB"
+date: "12/02/2026"
+output:
+  html_document:
+    highlight: textmate
+    theme: readable
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# 1. Introduction
+
+L'objectif de ce projet est de développer un système capable de distinguer les textes rédigés par des humains de ceux générés par une Intelligence Artificielle. Ce défi repose sur l'hypothèse qu'il existe des caractéristiques linguistiques et stylométriques nuancées propres à chaque classe
+
+# 2. Chargement et Exploration des Données
+
+D'abord, nous commençons par charger les librairies nécessaires.
+
+```{r libs}
+library(tidyverse)
+library(quanteda)
+library(quanteda.textstats)
+library(readr)
+```
+
+# 2.1 Import et fusion des datasets
+
+Nous disposons de quatre fichiers CSV (train_drcat_01 à 04) que nous fusionnons pour obtenir un fichier d'entraînement unique
+
+```{r load_data}
+# Liste des fichiers d'entraînement
+files <- c("train_drcat_01.csv", "train_drcat_02.csv", "train_drcat_03.csv", "train_drcat_04.csv")
+
+# Lecture et fusion
+full_dataset <- lapply(files, read_csv) %>% bind_rows()
+
+# Nettoyage des textes vides
+full_dataset <- full_dataset %>% filter(!is.na(text))
+
+# Affichage des dimensions
+cat("Dimensions du dataset fusionné :", dim(full_dataset))
+```
+
+## 3 Analyse Exploratoire des Données (EDA)
+
+Il est crucial d'observer si nos classes sont équilibrées. Un déséquilibre entre le nombre de textes humains et IA pourrait influencer la précision de notre modèle final.
+
+```{r eda_plot}
+# Visualisation de la distribution des labels (0: Humain, 1: IA)
+ggplot(full_dataset, aes(x = as.factor(label), fill = as.factor(label))) +
+  geom_bar(alpha = 0.8) +
+  scale_fill_manual(values = c("#2980b9", "#c0392b"), labels = c("Humain", "IA")) +
+  labs(title = "Répartition des classes dans le corpus", x = "Catégorie", y = "Nombre de textes") +
+  theme_minimal()
+```
+
+## 4. Extraction des Caractéristiques Stylométriques
+
+Nous extrayons des métriques qui capturent le "style" de l'auteur, comme la variabilité de la longueur des phrases et la densité de ponctuation.
+
+
+```{r feature_extraction}
+
+# Calcul des métriques structurelles
+data_features <- full_dataset %>%
+  mutate(
+    word_count = str_count(text, "\\w+"),
+    # Écart-type de la longueur des phrases pour mesurer la variabilité
+    sentence_var = sapply(str_split(text, "[.!?]"), function(x) sd(nchar(x), na.rm = TRUE)),
+    # Ratio de ponctuation par mot
+    punc_ratio = str_count(text, "[:punct:]") / word_count
+  )
+
+# Remplacement des NA par 0 (pour les textes d'une seule phrase)
+data_features$sentence_var[is.na(data_features$sentence_var)] <- 0
+
+```
+
+
+
+## 5.Analyse de la Lisibilité (Score de Flesch)
+
+Le score de lisibilité de Flesch permet d'évaluer la complexité d'un texte. L'IA produit souvent des textes très fluides avec une syntaxe standardisée.
+
+```{r readability}
+# Création du corpus pour l'analyse textuelle
+text_corpus <- corpus(full_dataset$text)
+
+# Calcul du score de Flesch Reading Ease
+readability_stats <- textstat_readability(text_corpus, measure = "Flesch")
+data_features$flesch_score <- readability_stats$Flesch
+
+# Boxplot pour comparer les deux classes
+ggplot(data_features, aes(x = as.factor(label), y = flesch_score, fill = as.factor(label))) +
+  geom_boxplot() +
+  labs(title = "Distribution des scores de lisibilité de Flesch", x = "Classe", y = "Score") +
+  theme_light()
+```
+Le score de Flesch est utilisé ici comme indicateur de la perplexité : une lisibilité très fluide et constante est souvent corrélée à une faible perplexité typique des LLM.
+
+
+## 6.Vectorisation et Préparation pour l'AFD
+
+Nous transformons le texte en une matrice TF-IDF de n-grammes pour l'Étudiant 2.
+
+```{r tfidf_matrix}
+
+# Transformation en matrice de termes (DFM)
+dfm_final <- tokens(text_corpus, remove_punc = TRUE, remove_numbers = TRUE) %>%
+  tokens_remove(stopwords("en")) %>%
+  tokens_ngrams(n = 1:2) %>%
+  dfm() %>%
+  dfm_trim(min_termfreq = 20) %>%
+  dfm_tfidf()
+
+# Affichage des dimensions de la matrice
+dim(dfm_final)
+
+```
+## 7. Visualisation des Bigrammes les plus fréquents
+
+
+Afin de mieux comprendre les modèles linguistiques, nous isolons les séquences de deux mots les plus récurrentes dans l'ensemble du dataset.
+
+```{r top_bigrams}
+# 1. On crée une DFM de COMPTAGE (sans TF-IDF) pour le graphique
+dfm_counts <- tokens(text_corpus, remove_punc = TRUE, remove_numbers = TRUE) %>%
+  tokens_remove(stopwords("en")) %>%
+  tokens_ngrams(n = 1:2) %>%
+  dfm()
+
+# 2. Extraction des fréquences à partir de cette matrice de comptage
+freq_words <- textstat_frequency(dfm_counts, n = 10)
+
+# 3. Graphique des fréquences
+ggplot(freq_words, aes(x = reorder(feature, frequency), y = frequency)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 10 des Bigrammes les plus fréquents (Comptage brut)",
+       x = "Bigrammes",
+       y = "Fréquence") +
+  theme_minimal()
+```
+
+# 8.1 Fondements Mathématiques de l'AFD
+
+L'objectif de l'AFD est de trouver la meilleure projection pour séparer les classes. Contrairement à une simple réduction de dimension (comme l'ACP) qui conserve la variance globale, l'AFD cherche à discriminer.
+
+Concrètement, on cherche un axe w qui maximise le ratio de Fisher : J(w)=(w^T Sb w)/(w^T Sw w)
+
+L'idée est qu'on veut maximiser le numérateur (Sb, la distance entre les centres des groupes) tout en minimisant le dénominateur (Sw, la dispersion à l'intérieur des groupes). En clair, on veut que les classes soient le plus loin possible l'une de l'autre, tout en restant compactes pour ne pas se mélanger.
+
+# 8.2. Réduction de Dimension par Analyse Factorielle Discriminante (AFD)
+
+
+Nous passons maintenant à l'étape de projection. L'objectif est de combiner les caractéristiques stylométriques (longueur de phrase, ponctuation) avec les n-grammes les plus fréquents pour construire un espace réduit discriminant.
+
+```{r afd_modeling}
+library(MASS)
+
+#Préparation intelligente de la matrice
+
+dfm_reduced <- dfm_trim(dfm_final, min_termfreq = 50, termfreq_type = "rank") 
+
+# Conversion propre en dataframe compatible avec l'AFD
+data_tfidf <- convert(dfm_reduced, to = "data.frame")
+
+# Nettoyage des noms de colonnes (ex: "of the" devient "of.the") pour éviter les erreurs R
+colnames(data_tfidf) <- make.names(colnames(data_tfidf))
+
+#Fusion des données
+
+dataset_complete <- cbind(
+  data_features %>% dplyr::select(label, sentence_var, punc_ratio, flesch_score),
+  data_tfidf %>% dplyr::select(-doc_id)
+)
+dataset_complete <- dataset_complete[, sapply(dataset_complete, function(v) var(v, na.rm=TRUE) != 0)]
+
+#Calcul de l'AFD
+
+# On applique l'AFD sur l'ensemble des variables
+afd_model <- lda(label ~ ., data = dataset_complete, na.action = na.omit)
+
+# Projection des données sur le nouvel axe discriminant (LD1)
+prediction_afd <- predict(afd_model, dataset_complete)
+
+dataset_for_s3 <- dataset_complete
+dataset_for_s3$lda_score <- prediction_afd$x[,1]
+
+# Sauvegarde pour la suite
+write.csv(dataset_for_s3, "dataset_reduced_final.csv", row.names = FALSE)
+
+# Affichage de la part de variance expliquée (informatif)
+prop_trace <- afd_model$svd^2 / sum(afd_model$svd^2)
+cat("Variance expliquée par l'axe LD1 :", round(prop_trace[1]*100, 2), "%")
+```
+
+# 9. Visualisation de la Séparation
+
+```{r afd_plot}
+plot_data <- data.frame(LD1 = dataset_for_s3$lda_score, Label = as.factor(dataset_for_s3$label))
+
+ggplot(plot_data, aes(x = Label, y = LD1, fill = Label)) +
+  geom_violin(trim = FALSE, alpha = 0.5) +
+  geom_boxplot(width = 0.1) +
+  scale_fill_manual(values = c("blue", "red"), labels = c("Humain", "IA")) +
+  labs(title = "Séparation Humain vs IA", 
+       y = "Score Discriminant (LD1)") +
+  theme_minimal()
+```
+
+Le graphique montre une séparation nette : la distribution des textes Humains (en bleu) est bien distincte de celle des textes IA (en rouge) sur l'axe vertical. Ce faible chevauchement confirme que notre score 'LD1' arrive bien à capturer les différences de style entre les deux groupes.
+
+# 10. Modélisation Prédictive : Approche Bayésienne
+
+Suite à la réduction de dimension opérée par l'Analyse Factorielle Discriminante (AFD), nous disposons désormais d'un indicateur synthétique fort (le score LD1) combiné aux métriques stylométriques. 
+
+Pour la classification finale, nous avons opté pour un **Classifieur Naïf Bayésien**. Ce choix se justifie par la nature probabiliste de notre problématique (estimer la probabilité qu'un texte soit une IA) et par sa robustesse sur des jeux de données où les variables sont décorrélées (ce qui est le cas grâce à l'AFD).
+
+## 10.1 Protocole d'Entraînement
+
+Nous appliquons une **validation croisée stratifiée (10-fold Cross-Validation)**. Cette méthode rigoureuse nous assure que les performances du modèle ne sont pas dues au hasard d'un découpage unique train/test.
+
+```{r bayes_modeling}
+# Chargement des paquets requis pour la modélisation
+if(!require(e1071)) install.packages("e1071")
+if(!require(caret)) install.packages("caret")
+if(!require(pROC)) install.packages("pROC")
+if(!require(DescTools)) install.packages("DescTools")
+
+library(caret)
+library(pROC)
+library(DescTools)
+
+# 1. Chargement et préparation des données finales
+  donnees_finales <- read.csv("dataset_reduced_final.csv")
+
+# Conversion de la cible en facteurs explicites (Requis par Caret)
+# On s'assure que 0 = Humain et 1 = IA
+donnees_finales$label <- factor(donnees_finales$label, 
+                                levels = c(0, 1), 
+                                labels = c("Humain", "IA"))
+
+# 2. Configuration du contrôle de l'entraînement
+ctrl_validation <- trainControl(
+  method = "cv",              # Cross-Validation
+  number = 10,                # 10 folds
+  savePredictions = "final",  # Sauvegarder les prédictions pour l'analyse
+  classProbs = TRUE,          # Calculer les probabilités 
+  summaryFunction = twoClassSummary # Pour obtenir le ROC/AUC
+)
+
+# 3. Entraînement du Modèle
+set.seed(2026) 
+modele_bayes <- train(
+  label ~ lda_score + sentence_var + punc_ratio + flesch_score,
+  data = donnees_finales,
+  method = "naive_bayes",
+  trControl = ctrl_validation,
+  metric = "ROC"
+)
+
+# Résumé succinct du modèle
+print(modele_bayes)
+```
+On remarque que l'activation du Kernel fait exploser la sensibilité (96.5%), ce qui signifie que le modèle ne rate presque aucune IA. En contrepartie, la spécificité baisse à 74%, ce qui suggère qu'il pourrait être un peu 'paranoïaque' et classer certains textes humains complexes comme étant de l'IA.
+
+# 10.2 Évaluation des Performances
+
+Nous analysons la Matrice de Confusion pour vérifier l'équilibre entre Faux Positifs et Faux Négatifs, ainsi que l'aire sous la courbe ROC (AUC).
+
+```{r evaluation_metrics}
+# Extraction des prédictions
+resultats_preds <- modele_bayes$pred
+
+# Matrice de Confusion
+matrice_conf <- confusionMatrix(resultats_preds$pred, resultats_preds$obs, mode = "everything")
+
+# Calcul de l'AUC et Préparation ROC
+obs_num <- ifelse(resultats_preds$obs == "IA", 1, 0)
+prob_ia <- resultats_preds$IA
+obj_roc <- roc(obs_num, prob_ia, quiet = TRUE)
+auc_score <- auc(obj_roc)
+
+# Score de Brier
+brier_score <- BrierScore(obs_num, prob_ia)
+
+# Affichage des Résultats
+cat("SYNTHÈSE DES PERFORMANCES\n")
+cat("Exactitude (Accuracy)      :", round(matrice_conf$overall["Accuracy"]*100, 2), "%\n")
+cat("Sensibilité (Détection IA) :", round(matrice_conf$byClass["Sensitivity"]*100, 2), "%\n")
+cat("Spécificité (Rejet Humain) :", round(matrice_conf$byClass["Specificity"]*100, 2), "%\n")
+cat("AUC (Discrimination)       :", round(auc_score, 4), "\n")
+cat("Score de Brier (Fiabilité) :", round(brier_score, 4), "\n")
+
+# Visualisation de la Courbe ROC
+plot(obj_roc, 
+     col = "blue",  
+     lwd = 2,       
+     main = "Courbe ROC",
+     legacy.axes = TRUE) 
+
+# Légende
+legend("bottomright", legend = paste("AUC =", round(auc_score, 3)), col = "blue", lwd = 2)
+```
+
+Le modèle est très preformant avec une AUC de 0.96.On noteque la Sensibilité (96.5%) est nettement supérieure à la Spécificité (74%). Concrètement, cela signifie que notre détecteur est très "agressif" : il ne rate quasiment aucun texte IA, quitte à classer par erreur quelques textes humains complexes comme étant artificiels (Faux Positifs).
+
+Enfin, le Score de Brier de 0.07 (très proche de 0) indique que le modèle est fiable : ses prédictions sont tranchées et non hésitantes.
+
+# 11. Conclusion
+
+Ce projet nous a permis de voir que combiner l'analyse du style (longueur des phrases, ponctuation) et les probabilités est une méthode très efficace pour repérer les textes générés par IA.
+
+L'étape la plus importante a été l'utilisation de l'Analyse Factorielle Discriminante (AFD). Au lieu de se perdre avec des milliers de variables (les mots et le style), l'AFD a résumé toute l'information en un seul score (LD1). C'est grâce à cette simplification que notre modèle Naïf Bayésien a pu atteindre une excellente performance (AUC de 0.96).
+
+Le point fort de notre détecteur est sa sensibilité (96.5%). Concrètement, il est très strict : il ne laisse quasiment rien passer. C'est idéal pour un outil anti-plagiat, car l'objectif est avant tout de ne pas rater une copie générée par une IA.
+
+# 12. Pistes d'Amélioration (Travaux Futurs)
+
+Pour aller plus loin et détecter les nouvelles IA (qui imitent de mieux en mieux les humains), nous pourrions explorer plusieurs pistes que nous n'avons pas pu coder par manque de temps :
+
+-Comprendre le sens des phrases 
+    Nous avons utilisé la méthode TF-IDF, qui compte juste la présence des mots. Remplacer cela par des modèles comme BERT qu'on a déja utilisé dans un précédent projet (par exemple dans le projet Trading/IA que j'ai fait l'année dernière (Ryane SID IDRIS) permettrait d'analyser le sens et la logique du texte. Souvent, l'IA fait des phrases correctes grammaticalement mais qui manquent de fond, ce que BERT pourrait repérer.
+
+-Séparer des groupes mélangés (Kernel LDA) 
+    L'AFD classique trace une ligne droite pour séparer les groupes. Si les textes humains et IA finissent par trop se ressembler, il faudrait utiliser le "Kernel Trick" (KDA) pour tracer des frontières courbes et plus complexes.
