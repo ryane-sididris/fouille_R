@@ -142,9 +142,6 @@ Nous utilisons un Classifieur Naïf Bayésien basé sur :
 - L' AUC = 0.96 montre une excellente capacité de discrimination
 - Score de Brier faible indicte des prédictions fiables
 
-Le modèle est volontairement **agressif** :  
-il privilégie la détection des IA (utile pour anti-plagiat).
-
 ---
 
 # Pistes d’Amélioration
